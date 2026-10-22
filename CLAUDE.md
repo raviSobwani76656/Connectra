@@ -10,14 +10,16 @@ Read when relevant:
 ## Project scope
 Connectra is a Next.js app where users:
 - Sign up and log in with email + password.
-- Connect their Google account via OAuth (scopes: `openid email profile` only; no refresh token is stored).
-- See their Google name and email on a dashboard.
+- Connect their Google account via OAuth (scopes: `openid email profile https://www.googleapis.com/auth/drive.metadata.readonly`; the refresh token is stored encrypted, access tokens are never stored).
+- See their Google name and email, and their 20 most recent Google Drive files (name, type, modified date), on a dashboard.
+- Disconnect Google, and delete their account and all their data.
 
 Constraints:
 - Data is encrypted with AES-256-GCM.
 - Users never see each other's data.
+- Drive file metadata is fetched on each request and never stored; file contents are never accessed.
 
-Out of scope: Google Drive file access, data extraction, search.
+Out of scope: file contents (download, preview, edit, upload), Box and other integrations, search/filters/sorting, deployment (localhost only), admin roles.
 
 ## Always
 - Inspect the existing code and follow its conventions before writing new code.
@@ -50,7 +52,7 @@ Load the relevant skill for deeper guidance:
 ## Project Commands
 - Install: `npm install`
 - Run: `npm run dev` (http://localhost:3000)
-- Test: none yet (no test runner or `test` script configured)
+- Test: `npm test` (Vitest unit tests in `tests/`)
 - Lint / format: `npm run lint` (ESLint; no formatter configured)
 - Type-check: `npx tsc --noEmit`
 - Build: `npm run build`
