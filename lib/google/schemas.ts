@@ -30,8 +30,9 @@ export const refreshResponseSchema = z.object({
   scope: z.string().max(2048).optional(),
 });
 
+/** OAuth error responses: only the short error code is read (e.g. invalid_grant). */
 export const oauthErrorSchema = z.object({
-  error: z.string().max(128),
+  error: z.string().regex(/^[a-z_]{1,64}$/),
 });
 
 /** Claims we read from a verified ID token; signature, iss, aud and exp are checked by jose. */

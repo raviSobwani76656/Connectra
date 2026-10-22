@@ -74,6 +74,19 @@ describe("parseServerEnv (SR-12)", () => {
     expect(errorFor({ ...VALID, APP_URL: value }).message).toContain("APP_URL");
   });
 
+  it.each(["http://localhost:3000", "http://127.0.0.1:3000", "https://connectra.example"])(
+    "accepts APP_URL %s",
+    (value) => {
+      expect(parseServerEnv({ ...VALID, APP_URL: value }).APP_URL).toBe(value);
+    },
+  );
+
+  it("rejects plain http on a non-localhost host, so cookies cannot silently lose Secure (finding I-6)", () => {
+    expect(errorFor({ ...VALID, APP_URL: "http://connectra.example" }).message).toContain(
+      "APP_URL must use https:// unless the host is localhost",
+    );
+  });
+
   it("rejects a Google client ID from the wrong place", () => {
     expect(errorFor({ ...VALID, GOOGLE_CLIENT_ID: "not-a-client-id" }).message).toContain(
       "GOOGLE_CLIENT_ID must end with .apps.googleusercontent.com",

@@ -14,25 +14,41 @@ export type DriveFile = {
   link: string | null;
 };
 
-/** unauthorized: 401. insufficient_scope: 403 for missing permission. temporary: anything retryable. */
-export type DriveFailure = "unauthorized" | "insufficient_scope" | "temporary";
+/**
+ * unauthorized: 401. insufficient_scope: 403 for missing permission.
+ * not_configured: the Drive API is not enabled for the Google Cloud project (a setup problem).
+ * temporary: anything retryable.
+ */
+export type DriveFailure = "unauthorized" | "insufficient_scope" | "not_configured" | "temporary";
 export type DriveListResult = { ok: true; files: DriveFile[] } | { ok: false; reason: DriveFailure };
 
 const PAGE_SIZE = 20;
 const SCOPE_REASONS = new Set(["insufficientPermissions", "ACCESS_TOKEN_SCOPE_INSUFFICIENT"]);
 const RATE_LIMIT_REASONS = new Set(["rateLimitExceeded", "userRateLimitExceeded", "dailyLimitExceeded", "RATE_LIMIT_EXCEEDED"]);
+const NOT_CONFIGURED_REASONS = new Set(["accessNotConfigured", "SERVICE_DISABLED"]);
 
-/** Maps a non-OK Drive response to a failure kind (D-019). */
+/** Only short identifier-like codes are ever logged; never Google's message text. */
+const SAFE_REASON = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
+
+/** Google's machine-readable error reasons from a Drive error body (classic and newer shapes). */
+export function driveErrorReasons(body: unknown): string[] {
+  const parsed = driveErrorSchema.safeParse(body);
+  return [
+    ...(parsed.data?.error.errors ?? []).map((entry) => entry.reason),
+    ...(parsed.data?.error.details ?? []).map((entry) => entry.reason),
+  ].filter((reason): reason is string => typeof reason === "string" && SAFE_REASON.test(reason));
+}
+
+/** Maps a non-OK Drive response to a failure kind (D-019, D-022). */
 export function classifyDriveError(status: number, body: unknown): DriveFailure {
   if (status === 401) {
     return "unauthorized";
   }
   if (status === 403) {
-    const parsed = driveErrorSchema.safeParse(body);
-    const reasons = [
-      ...(parsed.data?.error.errors ?? []).map((entry) => entry.reason),
-      ...(parsed.data?.error.details ?? []).map((entry) => entry.reason),
-    ].filter((reason): reason is string => typeof reason === "string");
+    const reasons = driveErrorReasons(body);
+    if (reasons.some((reason) => NOT_CONFIGURED_REASONS.has(reason))) {
+      return "not_configured";
+    }
     // Quota limits are temporary even though Google sends them as 403.
     if (reasons.some((reason) => RATE_LIMIT_REASONS.has(reason))) {
       return "temporary";
@@ -42,6 +58,18 @@ export function classifyDriveError(status: number, body: unknown): DriveFailure 
     }
   }
   return "temporary";
+}
+
+function logDriveFailure(kind: DriveFailure, status: number, body: unknown): void {
+  if (process.env.NODE_ENV !== "development") {
+    return;
+  }
+  const reason = driveErrorReasons(body)[0] ?? "none";
+  const hint =
+    kind === "not_configured"
+      ? " hint=enable the Google Drive API for this project in Google Cloud Console (APIs & Services > Library)"
+      : "";
+  console.warn(`[auth] google.drive.list failed kind=${kind} status=${status} reason=${reason}${hint}`);
 }
 
 export function driveListUrl(): URL {
@@ -77,7 +105,7 @@ export async function listRecentFiles(accessToken: string): Promise<DriveListRes
 
   if (!response.ok) {
     const reason = classifyDriveError(response.status, body);
-    logAuthErrorInDev("google.drive.list", { code: reason, status: response.status });
+    logDriveFailure(reason, response.status, body);
     return { ok: false, reason };
   }
 

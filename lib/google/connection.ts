@@ -162,7 +162,8 @@ export async function getGoogleDashboardState(): Promise<GoogleDashboardState> {
     if (list.reason === "insufficient_scope") {
       return expire("insufficient_scope");
     }
-    if (list.reason === "temporary") {
+    if (list.reason === "temporary" || list.reason === "not_configured") {
+      // A setup problem (Drive API disabled) is not the user's fault: keep the connection.
       return connected({ ok: false });
     }
     // 401: try once more with a fresh access token.

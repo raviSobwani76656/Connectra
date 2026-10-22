@@ -15,6 +15,11 @@ const toUrl = (value: string): URL | null => (URL.canParse(value) ? new URL(valu
 const appUrl = required
   .pipe(z.url("must be a valid URL"))
   .refine((value) => /^https?:\/\//.test(value), "must start with http:// or https://")
+  // Cookies are Secure only on https (D-014), so plain http is allowed for localhost only.
+  .refine((value) => {
+    const url = toUrl(value);
+    return url === null || url.protocol === "https:" || ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  }, "must use https:// unless the host is localhost")
   .refine((value) => {
     const url = toUrl(value);
     return url !== null && url.pathname === "/" && !url.search && !url.hash;

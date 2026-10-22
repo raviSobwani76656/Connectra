@@ -162,6 +162,15 @@ describe("getGoogleDashboardState (section 4, D-019, D-021)", () => {
     expect(google.listRecentFiles).toHaveBeenCalledTimes(1);
   });
 
+  it("Drive API not enabled (configuration error) keeps the connection and shows the files error", async () => {
+    db.row = storedRow();
+    google.refreshAccessToken.mockResolvedValue({ ok: true, accessToken: "ya29" });
+    google.listRecentFiles.mockResolvedValue({ ok: false, reason: "not_configured" });
+    expect(await getGoogleDashboardState()).toMatchObject({ kind: "connected", files: { ok: false } });
+    expect(db.deletes).toEqual([]);
+    expect(google.listRecentFiles).toHaveBeenCalledTimes(1);
+  });
+
   it("a database error shows 'unavailable' and changes nothing", async () => {
     db.loadError = { code: "PGRST000" };
     expect(await getGoogleDashboardState()).toEqual({ kind: "unavailable" });

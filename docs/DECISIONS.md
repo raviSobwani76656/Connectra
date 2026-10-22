@@ -44,17 +44,20 @@
 | D-008 | Store only the encrypted Google refresh token, never access tokens | Accepted | 2026-10-22 | — |
 | D-009 | Google OAuth: hand-written authorization code flow with PKCE, state and nonce | Accepted | 2026-10-22 | — |
 | D-010 | Google Drive scope: drive.metadata.readonly in Google testing mode | Accepted | 2026-10-22 | — |
-| D-011 | Drive file list fetched per request, never stored or cached | Accepted | 2026-10-22 | Superseded by D-019 once D-019 is accepted |
+| D-011 | Drive file list fetched per request, never stored or cached | Superseded | 2026-10-22 | Superseded by D-019 |
 | D-012 | Turn off Cache Components and Partial Prefetching | Accepted | 2026-10-22 | — |
 | D-013 | State-changing actions as Server Actions; admin client only for account deletion | Accepted | 2026-10-22 | — |
 | D-014 | Localhost only; data stored in Singapore | Accepted | 2026-10-22 | — |
 | D-015 | Test runner and new dependencies: Vitest and jose | Accepted | 2026-10-22 | — |
-| D-016 | Readable development auth log (proxy allow-list paused) | Proposed | 2026-10-22 | — |
-| D-017 | Email confirmation in both modes: token-hash confirm route, uniform messages, resend with cooldown | Proposed | 2026-10-22 | — |
-| D-018 | Show "Please confirm your email" on login for unconfirmed accounts | Proposed | 2026-10-22 | — |
-| D-019 | Drive listing: webViewLink, "File" fallback, one 401 retry, 403 split by reason | Proposed | 2026-10-22 | Supersedes D-011 |
-| D-020 | OAuth state cookie sealed with AES-256-GCM and bound to the user | Proposed | 2026-10-22 | — |
-| D-021 | Dashboard streams the Google section; expired state shown once | Proposed | 2026-10-22 | — |
+| D-016 | Readable development auth log (proxy allow-list paused) | Accepted | 2026-10-22 | — |
+| D-017 | Email confirmation in both modes: token-hash confirm route, uniform messages, resend with cooldown | Accepted | 2026-10-22 | — |
+| D-018 | Show "Please confirm your email" on login for unconfirmed accounts | Accepted | 2026-10-22 | — |
+| D-019 | Drive listing: webViewLink, "File" fallback, one 401 retry, 403 split by reason | Accepted | 2026-10-22 | Supersedes D-011 |
+| D-020 | OAuth state cookie sealed with AES-256-GCM and bound to the user | Accepted | 2026-10-22 | — |
+| D-021 | Dashboard streams the Google section; expired state shown once | Accepted | 2026-10-22 | — |
+| D-022 | Drive API not enabled is a configuration error; development logs show Google's error reason | Proposed | 2026-10-22 | — |
+| D-023 | Email confirmation link never leaves the browser signed in | Proposed | 2026-10-22 | Supersedes part of D-017 |
+| D-024 | Security headers and https APP_URL outside localhost | Proposed | 2026-10-22 | — |
 
 ---
 
@@ -458,7 +461,7 @@ only shows files the app itself created or opened, so it can't list recent files
 
 ### D-011: Drive File List Fetched per Request, Never Stored or Cached
 
-**Status:** Accepted (approved by Ravi, 2026-10-22)
+**Status:** Superseded by D-019 (2026-10-22)
 
 **Decision:** On each dashboard load, call Drive `files.list` with:
 - `q=trashed = false`
@@ -644,7 +647,7 @@ verification would break testing rule SEC-038.
 
 ### D-016: Proxy Runs Only on App Page Routes (Allow-List Matcher); Readable Dev Auth Log
 
-**Status:** Proposed
+**Status:** Accepted (approved by Ravi, 2026-10-22)
 
 > **Update 2026-10-22 (Ravi):** the root cause of the "Too many attempts" message was found:
 > a test user created while "Confirm email" was on was never confirmed, and repeated sign-ups
@@ -654,6 +657,8 @@ verification would break testing rule SEC-038.
 > - **Implemented at Ravi's request:** the plain-text development log (item 2):
 >   `[auth] <operation> failed code=<code> status=<status>`.
 > Email confirmation handling is covered by D-017 and D-018.
+>
+> **Accepted scope:** only the plain-text development log. The allow-list matcher remains paused and is not in effect.
 
 **Decision (as originally proposed):**
 - **Allow-list matcher:** change the `proxy.ts` matcher from "every path except static files" to an
@@ -723,7 +728,7 @@ verification would break testing rule SEC-038.
 
 ### D-017: Email Confirmation in Both Modes — Token-Hash Confirm Route, Uniform Messages, Resend with Cooldown
 
-**Status:** Proposed
+**Status:** Accepted (approved by Ravi, 2026-10-22)
 
 **Decision:** The app works correctly whether Supabase's "Confirm email" setting is on or off.
 
@@ -801,7 +806,7 @@ confirm-route parameter validation and redirects. Manual checklist in both modes
 
 ### D-018: Show "Please Confirm Your Email" on Login for Unconfirmed Accounts
 
-**Status:** Proposed
+**Status:** Accepted (approved by Ravi, 2026-10-22)
 
 **Decision:** When `signInWithPassword` returns `email_not_confirmed`, show "Please confirm your
 email address first. Check your inbox for the confirmation link." together with a "Resend
@@ -846,7 +851,7 @@ reuses the email already typed in the form.
 
 ### D-019: Drive Listing — webViewLink, "File" Fallback, One 401 Retry, 403 Split by Reason
 
-**Status:** Proposed
+**Status:** Accepted (approved by Ravi, 2026-10-22)
 
 **Decision:** Each dashboard load (or Refresh) lists Drive files as in D-011, with these changes:
 - **Fields:** `fields=files(id,name,mimeType,modifiedTime,webViewLink)`. Request parameters stay `q=trashed = false`, `orderBy=modifiedTime desc`, `pageSize=20`, `corpora=user` (Google: "Files owned by or shared to the user"), with no shared-drive parameters, so shared drives are excluded.
@@ -876,7 +881,7 @@ reuses the email already typed in the form.
 
 **Related decisions:** D-008, D-010, D-021
 
-**Supersedes:** D-011, once this decision is Accepted. D-011 stays in force until then.
+**Supersedes:** D-011.
 
 **Consequences:** Slightly more code paths to test. Files are still never stored or cached.
 
@@ -890,7 +895,7 @@ reuses the email already typed in the form.
 
 ### D-020: OAuth State Cookie Sealed with AES-256-GCM and Bound to the User
 
-**Status:** Proposed
+**Status:** Accepted (approved by Ravi, 2026-10-22)
 
 **Decision:**
 - **One cookie** holds `state`, `nonce`, the PKCE `code_verifier`, the Connectra user ID and
@@ -930,7 +935,7 @@ plain-text field.
 
 ### D-021: Dashboard Streams the Google Section; Expired State Shown Once
 
-**Status:** Proposed
+**Status:** Accepted (approved by Ravi, 2026-10-22)
 
 **Decision:**
 - **Streaming:** the header, message banner and danger zone render immediately. The whole Google
@@ -965,6 +970,128 @@ plain-text field.
 **Implementation Guidance:** No `"use cache"`. The dashboard response must not be cached (checked with `curl -I`).
 
 **Validation:** Manual: revoke at Google, reload (State C), reload again (State A).
+
+**Open Questions:** None.
+
+---
+
+### D-022: Drive API Not Enabled Is a Configuration Error; Development Logs Show Google's Error Reason
+
+**Status:** Proposed
+
+**Decision:**
+- **Configuration error:** a Drive 403 with reason `accessNotConfigured` (classic) or `SERVICE_DISABLED` (newer) is classified as `not_configured`. The user sees the normal files error ("Couldn't load your files right now…") and **keeps** the connection. The development log adds: `hint=enable the Google Drive API for this project in Google Cloud Console`.
+- **Development log format:** `[auth] google.drive.list failed kind=<kind> status=<status> reason=<Google reason>`.
+  - Only reasons matching `^[A-Za-z][A-Za-z0-9_]{0,63}$` are printed.
+  - Google's `message` text, tokens and file names are never printed.
+- **All development logs:** every code printed by `logAuthErrorInDev` passes the same kind of check (`safeLogCode`). OAuth error codes must match `^[a-z_]{1,64}$`.
+
+**Why:** During P2 testing, files failed to load until the Drive API was enabled in Google Cloud. The
+earlier log showed only `temporary status=403`, which hid the cause. A disabled API is a setup
+problem, not a revoked grant, so deleting the user's connection would be wrong.
+
+**Alternatives:** Show users a "service not configured" message (rejected: it exposes setup details to end users; the development hint is enough for the owner).
+
+**Date:** 2026-10-22
+
+**Decision owner / approver:** Ravi
+
+**Scope:** `lib/google/drive.ts`, `lib/google/connection.ts`, `lib/auth/dev-log.ts`, `lib/google/schemas.ts`.
+
+**Related decisions:** D-016, D-019
+
+**Supersedes:** None
+
+**Consequences:** Clearer diagnosis during development; no change for users.
+
+**Implementation Guidance:** Keep the allow-list check for anything logged that comes from outside the app.
+
+**Validation:** `tests/unit/drive-logging.test.ts` and `tests/unit/connection.test.ts`.
+
+**Open Questions:** None.
+
+---
+
+### D-023: Email Confirmation Link Never Leaves the Browser Signed In
+
+**Status:** Proposed
+
+**Decision:** After `verifyOtp` succeeds in `GET /auth/confirm`, end the session it created with
+`signOut({ scope: "local" })` and **always** redirect to `/login?notice=email-confirmed`. The
+person then logs in with their own password. This supersedes the part of D-017 that sent
+users with a session straight to `/dashboard`.
+
+**Why:** The Phase 5 independent security review found a login CSRF (finding M-1, Medium):
+1. An attacker signs up, takes the confirmation link from their own email and sends it to a victim.
+2. Opening it signed the victim's browser into the **attacker's** account.
+3. If the victim then connected Google Drive, their Google name, email and file names would be
+   stored under the attacker's account, which the attacker could later view (SR-01).
+
+Ending the new session removes the attack. The cost is one extra log-in after confirming.
+
+**Alternatives:**
+- A confirm page with a POST button. It would also stop email scanners using up links (L-07),
+  but it still signs in whoever clicks, so the login is still needed. Possible later improvement.
+- Refuse when a different user is already signed in. Rejected: it doesn't protect a signed-out victim.
+
+**Date:** 2026-10-22
+
+**Decision owner / approver:** Ravi
+
+**Scope:** `app/(auth)/auth/confirm/route.ts`.
+
+**Related decisions:** D-017, D-018
+
+**Supersedes:** D-017 (only the "success with a session goes to /dashboard" behaviour; the rest of D-017 stands).
+
+**Consequences:**
+- One extra log-in after confirming.
+- If the victim was already signed in, opening an attacker's link signs them out. This is a
+  nuisance only; no data is exposed.
+
+**Implementation Guidance:** Never redirect to `/dashboard` from the confirm route.
+
+**Validation:** `tests/unit/confirm-route.test.ts`; manual B7 now ends on `/login` with the confirmed notice.
+
+**Open Questions:** None.
+
+---
+
+### D-024: Security Headers and https APP_URL Outside Localhost
+
+**Status:** Proposed
+
+**Decision:**
+- **Headers on every response** (`next.config.ts`):
+  - `X-Frame-Options: DENY`
+  - `Content-Security-Policy: frame-ancestors 'none'; base-uri 'self'; object-src 'none'`
+  - `Referrer-Policy: same-origin`
+  - `X-Content-Type-Options: nosniff`
+  - `Permissions-Policy: camera=(), microphone=(), geolocation=()`
+- **`APP_URL`** must use `https://` unless the host is `localhost`, `127.0.0.1` or `[::1]`. The server refuses to start otherwise.
+
+**Why:**
+- Finding L-3 (Low): there were no anti-framing or hardening headers.
+- Finding I-6 (Info): `Secure` cookies follow `APP_URL`, so an http deployment would have
+  silently sent cookies without `Secure`.
+
+**Alternatives:** A full `default-src` CSP. Not yet: Next.js inline scripts need nonces, which needs browser testing. It is a follow-up before any deployment.
+
+**Date:** 2026-10-22
+
+**Decision owner / approver:** Ravi
+
+**Scope:** `next.config.ts`, `lib/env-schema.ts`.
+
+**Related decisions:** D-004, D-014
+
+**Supersedes:** None
+
+**Consequences:** The app cannot be framed by any site. An http `APP_URL` on a real host fails at startup with a clear message.
+
+**Implementation Guidance:** Add a full CSP with nonces before any deployment.
+
+**Validation:** `tests/unit/security-headers.test.ts`, `tests/unit/env-schema.test.ts`; response headers checked with `next start`.
 
 **Open Questions:** None.
 
@@ -1059,3 +1186,7 @@ Use a category in the title or scope when helpful. Examples:
 | 2026-10-22 | D-016 updated: root cause found; matcher change paused; plain-text dev log implemented | D-016 |
 | 2026-10-22 | D-017 and D-018 proposed for email confirmation handling | D-017, D-018 |
 | 2026-10-22 | D-019 (supersedes D-011 once accepted), D-020 and D-021 proposed for P2 | D-011, D-019 to D-021 |
+| 2026-10-22 | D-016 to D-021 accepted by Ravi; D-011 superseded by D-019 | D-011, D-016 to D-021 |
+| 2026-10-22 | D-022 proposed (Drive configuration errors and safe log codes) | D-022 |
+| 2026-10-22 | D-023 and D-024 proposed after the Phase 5 independent security review (findings M-1, L-3, I-6) | D-017, D-023, D-024 |
+| 2026-10-22 | Consistency notes (accepted records left unedited): D-020 refines D-009's cookie storage to one sealed cookie; D-015 was implemented with Vitest 4.1.12 and `vitest.config.mts` (Vitest 5 needs @types/node 22+; Ravi chose 4); D-017's route lives at `app/(auth)/auth/confirm/` (URL unchanged: `/auth/confirm`) | D-009, D-015, D-017, D-020 |

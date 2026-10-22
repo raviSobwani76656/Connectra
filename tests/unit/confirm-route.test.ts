@@ -2,7 +2,8 @@ import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const verifyOtp = vi.fn();
-vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ auth: { verifyOtp } }) }));
+const signOut = vi.fn();
+vi.mock("@/lib/supabase/server", () => ({ createClient: async () => ({ auth: { verifyOtp, signOut } }) }));
 
 class RedirectSignal extends Error {
   constructor(readonly url: string) {
@@ -35,18 +36,34 @@ async function redirectOf(query: string): Promise<string> {
 
 beforeEach(() => {
   verifyOtp.mockReset();
+  signOut.mockReset().mockResolvedValue({ error: null });
 });
 
-describe("GET /auth/confirm (FR-12, D-017)", () => {
-  it("verifies the token hash and goes to the dashboard when a session is created (AC-12.3)", async () => {
+describe("GET /auth/confirm (FR-12, D-017, D-023)", () => {
+  it("verifies the token hash, signs the new session out and asks the person to log in (AC-12.3)", async () => {
     verifyOtp.mockResolvedValue({ data: { session: { access_token: "x" }, user: {} }, error: null });
-    expect(await redirectOf(`?token_hash=${TOKEN}&type=email`)).toBe("/dashboard");
+    expect(await redirectOf(`?token_hash=${TOKEN}&type=email`)).toBe("/login?notice=email-confirmed");
     expect(verifyOtp).toHaveBeenCalledWith({ type: "email", token_hash: TOKEN });
+    expect(signOut).toHaveBeenCalledWith({ scope: "local" });
+  });
+
+  it("never sends a link-opener to the dashboard (login CSRF, security finding M-1)", async () => {
+    verifyOtp.mockResolvedValue({ data: { session: { access_token: "attacker-session" }, user: {} }, error: null });
+    const target = await redirectOf(`?token_hash=${TOKEN}&type=signup`);
+    expect(target).not.toContain("/dashboard");
+    expect(signOut).toHaveBeenCalledTimes(1);
+  });
+
+  it("still asks the person to log in if signing out fails", async () => {
+    verifyOtp.mockResolvedValue({ data: { session: { access_token: "x" }, user: {} }, error: null });
+    signOut.mockResolvedValue({ error: { code: "unexpected_failure", status: 500 } });
+    expect(await redirectOf(`?token_hash=${TOKEN}&type=email`)).toBe("/login?notice=email-confirmed");
   });
 
   it("goes to log in with the confirmed notice when no session is created", async () => {
     verifyOtp.mockResolvedValue({ data: { session: null, user: {} }, error: null });
     expect(await redirectOf(`?token_hash=${TOKEN}&type=signup`)).toBe("/login?notice=email-confirmed");
+    expect(signOut).not.toHaveBeenCalled();
   });
 
   it("reports an expired link (AC-12.4)", async () => {
@@ -81,6 +98,6 @@ describe("GET /auth/confirm (FR-12, D-017)", () => {
     const target = await redirectOf(
       `?token_hash=${TOKEN}&type=email&next=https://evil.example&redirect_to=https://evil.example`,
     );
-    expect(target).toBe("/dashboard");
+    expect(target).toBe("/login?notice=email-confirmed");
   });
 });

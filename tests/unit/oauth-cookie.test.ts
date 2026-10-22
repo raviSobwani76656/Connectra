@@ -50,9 +50,12 @@ describe("OAuth flow cookie (D-020)", () => {
     expect(openOAuthFlow(value, "user-a", NOW)).toBeNull();
   });
 
-  it("rejects a tampered cookie", () => {
-    const sealed = sealOAuthFlow(FLOW);
-    const last = sealed.at(-1) === "A" ? "B" : "A";
-    expect(openOAuthFlow(sealed.slice(0, -1) + last, "user-a", NOW)).toBeNull();
+  it.each([1, 2, 3])("rejects a cookie with a flipped byte in part %i (IV, tag, ciphertext)", (index) => {
+    // Flip a decoded byte: changing the last base64url character alone can hit unused padding bits.
+    const parts = sealOAuthFlow(FLOW).split(".");
+    const bytes = Buffer.from(parts[index], "base64url");
+    bytes[0] ^= 0x01;
+    parts[index] = bytes.toString("base64url");
+    expect(openOAuthFlow(parts.join("."), "user-a", NOW)).toBeNull();
   });
 });

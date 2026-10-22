@@ -3,7 +3,7 @@
 | Attribute | Value |
 |---|---|
 | Status | **Approved by Ravi, 2026-10-22** |
-| Version | 1.2 (P2 detail: FR-07, BR-06, BR-08 and AC-7.x updated; approved by Ravi, 2026-10-22). 1.1 added FR-12, FR-13, BR-12. |
+| Version | 1.4 (Phase 5 security review: AC-12.3 per D-023). 1.3 (Phase 5 consistency: FR-11/AC-11.2 DELETE confirmation, BR-08 configuration errors, BR-14, OAuth cookie row). 1.2 updated FR-07, BR-06, BR-08 and AC-7.x; 1.1 added FR-12, FR-13, BR-12. |
 | Date | 2026-10-22 |
 | Business owner / approver | Ravi |
 | Other owners | TBD |
@@ -55,7 +55,7 @@ Priority: **P1** is built and verified first; **P2** is built only after P1 is v
 | FR-08 | The dashboard shows clear empty states: a "Connect Google Drive" prompt when not connected, and a message when the connected Drive has no files. | P2 |
 | FR-09 | The connection persists: after signing out and back in, the account holder sees their Google details and files without reconnecting (subject to limitation L-01). | P2 |
 | FR-10 | A signed-in account holder can disconnect Google: access is revoked with Google and the stored connection is deleted. | P2 |
-| FR-11 | A signed-in account holder can permanently delete their account and all data stored about them, after re-confirming their password. | P2 |
+| FR-11 | A signed-in account holder can permanently delete their account and all data stored about them, after re-confirming their password and typing DELETE. | P2 |
 | FR-12 | When email confirmation is required by the account service, a new account holder is told to check their email, can confirm their address through the emailed link, and is then signed in or asked to log in. The application works whether confirmation is required or not. | P1 |
 | FR-13 | A person waiting for a confirmation email can request a new one, at most once per 60 seconds. | P1 |
 
@@ -70,7 +70,8 @@ Priority: **P1** is built and verified first; **P2** is built only after P1 is v
 | BR-05 | The file list contains items the account holder can see in their own Drive or that are shared with them, excluding trashed items and items in shared drives. Folders are included. |
 | BR-06 | Item types are shown as a friendly label for common types (for example "Google Sheets", "PDF", "Folder"); otherwise the label "File" is shown. Raw type identifiers are never shown. Labels: Folder, Google Docs, Google Sheets, Google Slides, PDF, Image, Video, Word, Excel, PowerPoint, Text, File. |
 | BR-07 | Dates and times are shown in the Asia/Kolkata time zone in the format `22 Oct 2026, 14:05`. |
-| BR-08 | If Google reports the stored access permission as invalid, revoked or lacking Drive access, or the stored values cannot be decrypted, the stored connection is removed and the dashboard shows "Your Google Drive connection has expired or was removed. Please reconnect." **once**; later visits show the normal "Connect Google Drive" state (D-021). Temporary Google problems (rate limits, server errors, timeouts) keep the connection and show a retryable files error. |
+| BR-08 | If Google reports the stored access permission as invalid, revoked or lacking Drive access, or the stored values cannot be decrypted, the stored connection is removed and the dashboard shows "Your Google Drive connection has expired or was removed. Please reconnect." **once**; later visits show the normal "Connect Google Drive" state (D-021). Temporary Google problems (rate limits, server errors, timeouts) and configuration problems (Drive API not enabled for the project, D-022) keep the connection and show a retryable files error. |
+| BR-14 | If the stored connection cannot be read (a database problem), the dashboard shows "Couldn't load your Google Drive connection right now. Please try again." and changes nothing. |
 | BR-13 | "Open in Drive" uses only the link returned by Google, and only if it is an https link to drive.google.com or docs.google.com; otherwise no link is shown. It opens in a new tab without giving the new page access to Connectra. |
 | BR-09 | If Google does not provide a name, only the email is shown. |
 | BR-10 | On disconnect, if Google cannot confirm revocation, the stored connection is still deleted and the account holder is told how to remove access manually in their Google account settings. |
@@ -143,7 +144,7 @@ A single failure blocks acceptance, regardless of other results.
 | Google name and email | Show on dashboard (FR-06) | Authenticated encryption, bound to account and field | Same as above | Same as above |
 | Short-lived Google access credential | Call Google to list files | Kept in memory for one request only | Not retained | Discarded after the request |
 | Drive file metadata (name, type, modified time) | Show on dashboard (FR-07) | Fetched per request, never stored | Not retained | Not applicable |
-| Temporary approval-flow values (state, code verifier, nonce) | Protect the Google approval flow | Short-lived, script-inaccessible cookies | 10 minutes maximum | Cleared after the callback |
+| Temporary approval-flow values (state, code verifier, nonce) | Protect the Google approval flow | One short-lived, script-inaccessible cookie, encrypted and bound to the account (D-020) | 10 minutes maximum | Cleared at the callback, before the code is exchanged |
 
 **Data residency:** stored data is held in a data centre in **Singapore (ap-southeast-1), outside India**.
 Any future production use must assess data residency and cross-border transfer obligations
@@ -203,7 +204,7 @@ Format: **Given / When / Then**. "AC-x.y" IDs are referenced in the traceability
 ### FR-12 Email confirmation
 - **AC-12.1 (alternative: confirmation required)** Given confirmation is required, when a visitor signs up with a valid new email and password, then no error is shown and a "Check your email" screen says: "We've sent a confirmation link to your email address. Click it to activate your account, then log in." with a link back to log in.
 - **AC-12.2 (permission: no enumeration)** Given confirmation is required, when a visitor signs up with an email that already has an account, then the same "Check your email" screen is shown.
-- **AC-12.3 (success)** Given a valid, unused confirmation link, when it is opened, then the address is confirmed and the person lands on the dashboard (or, if no session is created, on the log-in page with "Your email is confirmed. You can now log in.").
+- **AC-12.3 (success)** Given a valid, unused confirmation link, when it is opened, then the address is confirmed, the browser is **not** left signed in, and the person lands on the log-in page with "Your email is confirmed. You can now log in." (D-023: prevents a confirmation link from someone else signing this browser into their account).
 - **AC-12.4 (failure)** Given an expired, already-used or malformed link, when it is opened, then a clear message explains the link is invalid or expired and offers to resend; nothing else changes.
 - **AC-12.5 (failure)** Given an unconfirmed account, when the correct password is entered on log in, then "Please confirm your email address first. Check your inbox for the confirmation link." is shown with a resend option; with a wrong password the generic "Invalid email or password." is shown.
 - **AC-12.6 (alternative: confirmation not required)** Given confirmation is not required, then sign-up behaves as AC-1.1 and AC-1.3.
@@ -248,7 +249,7 @@ Format: **Given / When / Then**. "AC-x.y" IDs are referenced in the traceability
 
 ### FR-11 Delete account
 - **AC-11.1 (success)** Given a signed-in holder, when they confirm deletion and re-enter the correct password, then revocation with Google is attempted, the account and all stored data are deleted, they are signed out, and they can no longer sign in.
-- **AC-11.2 (failure)** Given a wrong password, then nothing is deleted and an error is shown.
+- **AC-11.2 (failure)** Given a wrong password, or a confirmation other than exactly DELETE, then nothing is deleted and an error is shown.
 - **AC-11.3 (permission)** Given holder A, when A deletes their account, then holder B's account and data are unaffected.
 - **AC-11.4 (alternative)** Given a deleted account's email, when someone signs up with it again, then a fresh, empty account is created.
 
