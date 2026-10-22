@@ -49,6 +49,9 @@
 | D-013 | State-changing actions as Server Actions; admin client only for account deletion | Accepted | 2026-10-22 | — |
 | D-014 | Localhost only; data stored in Singapore | Accepted | 2026-10-22 | — |
 | D-015 | Test runner and new dependencies: Vitest and jose | Accepted | 2026-10-22 | — |
+| D-016 | Readable development auth log (proxy allow-list paused) | Proposed | 2026-10-22 | — |
+| D-017 | Email confirmation in both modes: token-hash confirm route, uniform messages, resend with cooldown | Proposed | 2026-10-22 | — |
+| D-018 | Show "Please confirm your email" on login for unconfirmed accounts | Proposed | 2026-10-22 | — |
 
 ---
 
@@ -636,6 +639,208 @@ verification would break testing rule SEC-038.
 
 ---
 
+### D-016: Proxy Runs Only on App Page Routes (Allow-List Matcher); Readable Dev Auth Log
+
+**Status:** Proposed
+
+> **Update 2026-10-22 (Ravi):** the root cause of the "Too many attempts" message was found:
+> a test user created while "Confirm email" was on was never confirmed, and repeated sign-ups
+> hit Supabase's email sending limit. The proxy was **not** the cause.
+> - **Paused:** the allow-list matcher (item 1 below). It stays here as a record of the option
+>   and is not implemented.
+> - **Implemented at Ravi's request:** the plain-text development log (item 2):
+>   `[auth] <operation> failed code=<code> status=<status>`.
+> Email confirmation handling is covered by D-017 and D-018.
+
+**Decision (as originally proposed):**
+- **Allow-list matcher:** change the `proxy.ts` matcher from "every path except static files" to an
+  explicit list of app routes: `/`, `/login`, `/signup`, `/dashboard` and `/dashboard/:path*`.
+  `/api/oauth/google/:path*` is added in P2. All other paths skip the proxy, including Next's
+  development endpoints (`/_next/webpack-hmr`, `/__nextjs_*`, `/_next/mcp`), `/robots.txt` and
+  Chrome's `/.well-known/appspecific/*` probe.
+- **Readable dev auth log:** change the development-only `[auth]` log to print a plain string
+  (`code=<code> status=<status>`) instead of an object.
+
+**Why:** "Too many attempts" appears on `/login` after only a few attempts.
+- The app maps that message only to Supabase's `over_request_rate_limit` (login) or
+  `over_request_rate_limit` / `over_email_send_rate_limit` (sign-up), so Supabase really is
+  rate-limiting requests from this machine's IP.
+- Reading the code:
+  - While signed out, the proxy makes **no** Auth calls, because `getClaims()` returns early
+    without a session.
+  - A login attempt makes exactly **one** call (`POST /auth/v1/token?grant_type=password`).
+  - While signed in, **every** request that matches the proxy runs `getClaims()`. With legacy
+    HS256 signing keys that is one `GET /auth/v1/user` per request. Near expiry it also makes
+    one refresh `POST /auth/v1/token?grant_type=refresh_token`, which is the same endpoint
+    as password login.
+- The current matcher also lets through development and probe requests that never need a
+  session. That multiplies Auth traffic from the same IP while any window is signed in.
+- Separately, Next's development log file writes any logged object as `{}`. The `[auth]` lines
+  there cannot show the code, so the cause cannot be confirmed from the file today.
+
+**Alternatives:**
+- Raise Supabase's Auth rate limits for development. No code change, but it weakens brute-force
+  protection (L-04) and does not reduce unnecessary traffic.
+- Skip `getClaims()` in the proxy when no `sb-` cookie is present. Rejected: no gain, because no
+  network call happens without a session anyway.
+- Remove the proxy entirely and rely only on `requireUser()`. Rejected: loses session refresh,
+  which Server Components cannot do because they cannot set cookies.
+
+**Date:** 2026-10-22
+
+**Decision owner / approver:** Ravi
+
+**Scope:** `proxy.ts`, `app/(auth)/actions.ts` (development log only).
+
+**Related decisions:** D-004
+
+**Supersedes:** None
+
+**Consequences:**
+- **Security trade-off:** the proxy stops being deny-by-default. A new protected route only gets
+  the optimistic redirect and session refresh if it is added to the matcher. Access control is
+  unchanged, because the authoritative check is `requireUser()` in every protected page, action
+  and route (D-004, SR-02). The rule therefore becomes: **every** protected page, action and
+  route must call `requireUser()`; the matcher is a convenience only.
+- Fewer Auth calls per signed-in browsing session.
+
+**Implementation Guidance:**
+- Add new protected routes to the matcher **and** call `requireUser()` in them.
+- Add a unit test that lists the matcher and asserts that the protected routes are included
+  and the development endpoints are not.
+
+**Validation:**
+- Before the change, confirm the cause: the `[auth]` code in the `npm run dev` terminal, and
+  429 entries in Supabase Dashboard → Logs → Auth.
+- After the change: unit tests; the manual P1 checklist again; no further 429s during normal testing.
+
+**Open Questions:** Which JWT signing key type the Supabase project uses (Project Settings → JWT Keys): legacy HS256 or asymmetric (ECC/RSA). With asymmetric keys, signed-in requests make no `/user` call, so the main cause would more likely be the per-IP limit itself (for example a shared network IP).
+
+---
+
+### D-017: Email Confirmation in Both Modes — Token-Hash Confirm Route, Uniform Messages, Resend with Cooldown
+
+**Status:** Proposed
+
+**Decision:** The app works correctly whether Supabase's "Confirm email" setting is on or off.
+
+- **Sign-up:**
+  - If Supabase returns a session (confirmation off), go to `/dashboard` as now.
+  - If it returns no session (confirmation on), show a "Check your email" screen in place of the
+    form. Supabase hides whether the email already exists by returning no session for both
+    cases, so the screen is the same either way.
+  - The email stays in the form's own state and is never put in a URL.
+- **Confirmation link:** the "Confirm signup" email template points at
+  `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email`. This follows Supabase's
+  current server-side guidance (Auth → Passwords, PKCE flow).
+  - A new Route Handler, `GET /auth/confirm`, validates `token_hash` and `type` with Zod (`type`
+    must be `email` or `signup`) and calls `verifyOtp({ type, token_hash })` through the cookie
+    server client.
+  - On success with a session it redirects to `/dashboard`; on success without a session, to
+    `/login?notice=email-confirmed`.
+  - On an invalid or expired link it redirects to `/auth/confirm/error?reason=expired|invalid`,
+    a page offering a resend.
+  - The route accepts **no** `next` or redirect parameter, unlike Supabase's sample, so it cannot
+    be used as an open redirect (SEC-032).
+- **Resend:** a `resendConfirmation` Server Action calls
+  `supabase.auth.resend({ type: "signup", email })`.
+  - It always answers "If an account needs confirming, we've sent a new link." whether or not the
+    email exists.
+  - The one exception: when Supabase reports an email rate limit, it shows a friendly "please
+    wait" message.
+  - The button is disabled for 60 seconds after use, with a countdown in the browser. A short-lived
+    httpOnly cookie gives a best-effort cooldown on the server too. Supabase's own per-user
+    60-second interval is the real enforcement.
+- **Logging:** tokens and emails are never logged. Development logs show error code and status only (D-016).
+
+**Why:** This fixes the real cause of the "Too many attempts" incident: an unconfirmed user and
+repeated sign-ups using up the email limit. It also keeps account enumeration closed when
+confirmation is on, and supports production-like testing.
+
+**Alternatives:**
+- Supabase's default `{{ .ConfirmationURL }}` link, which goes through Supabase's `/verify` and
+  back with a PKCE `?code=`. Rejected: it relies on the code verifier cookie from the browser that
+  signed up, so it fails when the link is opened on another device or browser.
+- A confirm *page* with a "Confirm my email" button, where a POST verifies the token. Considered:
+  it survives email scanners that prefetch links (Supabase docs, Email templates → Email
+  prefetching), at the cost of one extra click. Not chosen by default; see Consequences.
+- Pass `next` through, as in Supabase's sample. Rejected: open-redirect risk for no requirement.
+
+**Date:** 2026-10-22
+
+**Decision owner / approver:** Ravi
+
+**Scope:** `app/(auth)/*`, `app/auth/confirm/*`, `lib/auth/*`, Supabase email template and URL configuration.
+
+**Related decisions:** D-004, D-005, D-016, D-018
+
+**Supersedes:** None. D-005 still sets confirmation **off** as the development default; this
+decision makes both settings work.
+
+**Consequences:**
+- Supabase's built-in email sender allows only **2 emails per hour per project**, so testing the
+  on mode is slow (custom SMTP raises the limit).
+- Email scanners that prefetch links (for example Microsoft Defender Safe Links) can use up the
+  one-time link before the user clicks it. The user then sees "expired" and must resend.
+- With confirmation **off**, an existing email still shows "An account with this email already
+  exists" (L-02, accepted in D-005).
+- The server-side cooldown cookie can be bypassed by clearing cookies. It only reduces accidental
+  repeats.
+
+**Implementation Guidance:** Validate every URL parameter with Zod; map reasons and notices to fixed messages (never echo query text); redirect only to fixed in-app paths.
+
+**Validation:** Unit tests for sign-up with and without a session, resend responses and cooldown,
+confirm-route parameter validation and redirects. Manual checklist in both modes.
+
+**Open Questions:** None.
+
+---
+
+### D-018: Show "Please Confirm Your Email" on Login for Unconfirmed Accounts
+
+**Status:** Proposed
+
+**Decision:** When `signInWithPassword` returns `email_not_confirmed`, show "Please confirm your
+email address first. Check your inbox for the confirmation link." together with a "Resend
+confirmation email" option. Every other login failure keeps the generic "Invalid email or password."
+
+**Why:**
+- Supabase Auth checks the password **before** the confirmation status. In
+  `internal/api/token.go`, `ResourceOwnerPasswordGrant`, `user.Authenticate(...)` and
+  `if !isValidPassword` come before `if params.Email != "" && !user.IsConfirmed()` (checked on
+  the master branch, 2026-10-22).
+- So this message only appears to someone who already typed the **correct password**. It reveals
+  that an unconfirmed account exists for that email only to a person who can already prove they
+  own it.
+- The benefit is large: without it, a real user gets "Invalid email or password" for a correct
+  password and has no way forward.
+
+**Alternatives:** Keep the generic "Invalid email or password." Rejected: it leaves real users
+stuck, and its only extra protection is against someone who already knows the password.
+
+**Date:** 2026-10-22
+
+**Decision owner / approver:** Ravi
+
+**Scope:** `logIn` Server Action and login form.
+
+**Related decisions:** D-005, D-017
+
+**Supersedes:** None
+
+**Consequences:** If a future Supabase version checked confirmation before the password, this
+message would start revealing unconfirmed accounts to anyone. This is checked by a manual test
+(wrong password on an unconfirmed account must still show the generic message).
+
+**Implementation Guidance:** Match only the exact `email_not_confirmed` code. The resend option
+reuses the email already typed in the form.
+
+**Validation:** Unit tests for the mapping; manual test with a wrong password on an unconfirmed account.
+
+**Open Questions:** None.
+
+---
+
 ## Decision Record Template
 
 Copy this section for each new decision. Replace all placeholders and remove fields
@@ -721,3 +926,6 @@ Use a category in the title or scope when helpful. Examples:
 | Not recorded | Initial decision log created with D-001 | D-001 |
 | 2026-10-22 | Index corrected to list D-001; D-002 to D-015 proposed | D-001 to D-015 |
 | 2026-10-22 | D-002 to D-015 accepted by Ravi; D-001 superseded by D-002 | D-001 to D-015 |
+| 2026-10-22 | D-016 proposed after login rate-limit investigation | D-016 |
+| 2026-10-22 | D-016 updated: root cause found; matcher change paused; plain-text dev log implemented | D-016 |
+| 2026-10-22 | D-017 and D-018 proposed for email confirmation handling | D-017, D-018 |

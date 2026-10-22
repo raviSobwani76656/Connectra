@@ -3,7 +3,7 @@
 | Attribute | Value |
 |---|---|
 | Status | **Approved by Ravi, 2026-10-22** |
-| Version | 1.0 |
+| Version | 1.1 (FR-12, FR-13, BR-12 added for email confirmation; approved by Ravi, 2026-10-22) |
 | Date | 2026-10-22 |
 | Business owner / approver | Ravi |
 | Other owners | TBD |
@@ -56,6 +56,8 @@ Priority: **P1** is built and verified first; **P2** is built only after P1 is v
 | FR-09 | The connection persists: after signing out and back in, the account holder sees their Google details and files without reconnecting (subject to limitation L-01). | P2 |
 | FR-10 | A signed-in account holder can disconnect Google: access is revoked with Google and the stored connection is deleted. | P2 |
 | FR-11 | A signed-in account holder can permanently delete their account and all data stored about them, after re-confirming their password. | P2 |
+| FR-12 | When email confirmation is required by the account service, a new account holder is told to check their email, can confirm their address through the emailed link, and is then signed in or asked to log in. The application works whether confirmation is required or not. | P1 |
+| FR-13 | A person waiting for a confirmation email can request a new one, at most once per 60 seconds. | P1 |
 
 ### 3.2 Business rules
 
@@ -72,6 +74,7 @@ Priority: **P1** is built and verified first; **P2** is built only after P1 is v
 | BR-09 | If Google does not provide a name, only the email is shown. |
 | BR-10 | On disconnect, if Google cannot confirm revocation, the stored connection is still deleted and the account holder is told how to remove access manually in their Google account settings. |
 | BR-11 | On account deletion, revocation with Google is attempted first (best effort); deletion of stored data proceeds even if revocation fails. |
+| BR-12 | When email confirmation is required, the sign-up result and the resend result are the same whether or not the email already has an account. The only exception is the login message for an unconfirmed account, which appears only after a correct password (D-018). |
 
 ### 3.3 Non-functional requirements
 
@@ -106,7 +109,7 @@ Priority: **P1** is built and verified first; **P2** is built only after P1 is v
 | Deployment beyond localhost | Learning project; no production hosting. |
 | Administrator roles or tools | Single user role only. |
 | Building or load-testing for full future scale | Recorded as NFR-08 only. |
-| Email confirmation on sign-up, password reset, multi-factor authentication | Not required for this MVP (see L-02). |
+| Password reset, multi-factor authentication | Not required for this MVP. |
 
 ## 5. Mandatory security and privacy requirements (pass/fail)
 
@@ -196,6 +199,19 @@ Format: **Given / When / Then**. "AC-x.y" IDs are referenced in the traceability
 - **AC-4.2 (permission)** Given a signed-out visitor, when they open the dashboard address directly, then they are sent to the sign-in page and no dashboard data is sent to the browser.
 - **AC-4.3 (permission)** Given a signed-in holder, when they open the sign-in or sign-up page, then they are sent to the dashboard.
 
+### FR-12 Email confirmation
+- **AC-12.1 (alternative: confirmation required)** Given confirmation is required, when a visitor signs up with a valid new email and password, then no error is shown and a "Check your email" screen says: "We've sent a confirmation link to your email address. Click it to activate your account, then log in." with a link back to log in.
+- **AC-12.2 (permission: no enumeration)** Given confirmation is required, when a visitor signs up with an email that already has an account, then the same "Check your email" screen is shown.
+- **AC-12.3 (success)** Given a valid, unused confirmation link, when it is opened, then the address is confirmed and the person lands on the dashboard (or, if no session is created, on the log-in page with "Your email is confirmed. You can now log in.").
+- **AC-12.4 (failure)** Given an expired, already-used or malformed link, when it is opened, then a clear message explains the link is invalid or expired and offers to resend; nothing else changes.
+- **AC-12.5 (failure)** Given an unconfirmed account, when the correct password is entered on log in, then "Please confirm your email address first. Check your inbox for the confirmation link." is shown with a resend option; with a wrong password the generic "Invalid email or password." is shown.
+- **AC-12.6 (alternative: confirmation not required)** Given confirmation is not required, then sign-up behaves as AC-1.1 and AC-1.3.
+
+### FR-13 Resend confirmation
+- **AC-13.1 (success)** Given the "Check your email" screen, the unconfirmed-login message or the invalid-link page, when "Resend confirmation email" is chosen, then "If an account needs confirming, we've sent a new link." is shown and the option is disabled for 60 seconds.
+- **AC-13.2 (permission: no enumeration)** Given an email with no account, or one already confirmed, when a resend is requested, then the same message is shown.
+- **AC-13.3 (failure)** Given the account service's email limit is reached, when a resend is requested, then a friendly "please wait" message is shown.
+
 ### FR-05 Connect Google
 - **AC-5.1 (success)** Given a signed-in, not-connected holder, when they choose "Connect Google Drive" and approve on Google's page, then they return to the dashboard in the connected state.
 - **AC-5.2 (failure)** Given the holder cancels on Google's page, when Google returns, then they see "Google connection was cancelled" and remain not connected.
@@ -254,7 +270,9 @@ Format: **Given / When / Then**. "AC-x.y" IDs are referenced in the traceability
 | ID | Risk / limitation | Impact | Mitigation / acceptance |
 |---|---|---|---|
 | L-01 | While Google's approval page is in testing mode, Google expires the long-lived permission after about 7 days, so FR-09 holds for up to 7 days only. | Holder must reconnect weekly. | Handled gracefully by BR-08. Accepted for localhost. |
-| L-02 | Without email confirmation, sign-up reveals whether an email already has an account (account enumeration), and anyone can register any email address. | Low for local use. | Accepted for development only; must be revisited before any production use. |
+| L-02 | When email confirmation is **not** required, sign-up reveals whether an email already has an account (account enumeration), and anyone can register any email address. With confirmation required, sign-up and resend do not reveal this (BR-12). | Low for local use. | Accepted for development only; must be revisited before any production use. |
+| L-07 | Some email security scanners (for example Microsoft Defender Safe Links in Outlook) open links in incoming email before the person does, which uses up the one-time confirmation link. | The person sees "link expired" and must resend. | Accepted; resend is offered on the error page (D-017). |
+| L-08 | The account service's built-in email sender allows only about 2 emails per hour per project. | Testing with confirmation required is slow. | Accepted for development; a custom email provider would raise the limit. |
 | L-03 | Production use of read-only file metadata permission would require Google app verification and a security assessment. | Blocks production launch. | Out of scope; recorded. |
 | L-04 | No application-level rate limiting beyond the account service's built-in limits. | Brute-force risk in production. | Accepted for localhost. |
 | L-05 | An account holder can technically read or overwrite their own encrypted stored values through the data service using their own session. | They gain only unreadable ciphertext; tampering is detected and treated as "not connected". No cross-account access. | Accepted; recorded as a decision. |
@@ -286,6 +304,8 @@ Specific test and checklist IDs are added during build phases.
 | FR-09 | AC-9.1 | SR-03 | M |
 | FR-10 | AC-10.1–10.3 | SR-10, SR-13 | U, M |
 | FR-11 | AC-11.1–11.4 | SR-10, SR-13 | M, R |
+| FR-12 | AC-12.1–12.6 | SR-09 | U (sign-up result, link parameter validation, unconfirmed-login mapping), M |
+| FR-13 | AC-13.1–13.3 | SR-09 | U (uniform response, cooldown), M |
 | NFR-01 | Section 5 | SR-01–SR-13 | U, M, R, security review |
 | NFR-02 | — | — | U, M |
 | NFR-03 | — | — | M |

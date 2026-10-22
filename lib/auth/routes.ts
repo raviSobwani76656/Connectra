@@ -3,6 +3,7 @@
 export const LOGIN_PATH = "/login";
 export const SIGNUP_PATH = "/signup";
 export const DASHBOARD_PATH = "/dashboard";
+export const CONFIRM_ERROR_PATH = "/auth/confirm/error";
 
 const PROTECTED_PREFIXES = [DASHBOARD_PATH];
 const SIGNED_OUT_ONLY = [LOGIN_PATH, SIGNUP_PATH];

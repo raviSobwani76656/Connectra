@@ -30,6 +30,20 @@ const existingPassword = z
 
 export const signUpSchema = z.object({ email, password: newPassword });
 export const logInSchema = z.object({ email, password: existingPassword });
+export const resendSchema = z.object({ email });
+
+/**
+ * Query parameters of the confirmation link (D-017). Only these two are read;
+ * anything else, including a redirect target, is ignored.
+ */
+export const confirmParamsSchema = z.object({
+  token_hash: z.string().regex(/^[A-Za-z0-9_-]{8,512}$/),
+  type: z.enum(["email", "signup"]),
+});
+
+/** Fixed notices and reasons: query text is never shown to the user. */
+export const loginNoticeSchema = z.enum(["email-confirmed"]);
+export const confirmErrorReasonSchema = z.enum(["expired", "invalid"]);
 
 export type AuthFields = "email" | "password";
 export type FieldErrors = Partial<Record<AuthFields, string>>;

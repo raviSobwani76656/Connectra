@@ -1,13 +1,21 @@
 import type { Metadata } from "next";
+import { loginNoticeSchema } from "@/lib/auth/schemas";
 import { AuthForm } from "../auth-form";
 
 export const metadata: Metadata = { title: "Log in · Connectra" };
 
-export default function LoginPage() {
+// Fixed text per notice: the query string is never shown to the user.
+const NOTICES = {
+  "email-confirmed": "Your email is confirmed. You can now log in.",
+} as const;
+
+export default async function LoginPage({ searchParams }: PageProps<"/login">) {
+  const parsed = loginNoticeSchema.safeParse((await searchParams).notice);
+
   return (
     <>
       <h1 className="mb-6 text-2xl font-semibold text-zinc-900">Log in</h1>
-      <AuthForm mode="login" />
+      <AuthForm mode="login" notice={parsed.success ? NOTICES[parsed.data] : undefined} />
     </>
   );
 }
