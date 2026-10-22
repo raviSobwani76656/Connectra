@@ -3,7 +3,7 @@
 | Attribute | Value |
 |---|---|
 | Status | **Approved by Ravi, 2026-10-22** |
-| Version | 1.1 (FR-12, FR-13, BR-12 added for email confirmation; approved by Ravi, 2026-10-22) |
+| Version | 1.2 (P2 detail: FR-07, BR-06, BR-08 and AC-7.x updated; approved by Ravi, 2026-10-22). 1.1 added FR-12, FR-13, BR-12. |
 | Date | 2026-10-22 |
 | Business owner / approver | Ravi |
 | Other owners | TBD |
@@ -51,7 +51,7 @@ Priority: **P1** is built and verified first; **P2** is built only after P1 is v
 | FR-04 | Only signed-in account holders can reach the dashboard; anyone else is sent to the sign-in page. | P1 |
 | FR-05 | A signed-in account holder can connect one Google account by approving access on Google's own page. The application never sees or stores the Google password. | P2 |
 | FR-06 | When connected, the dashboard shows the connected Google account's name and email. | P2 |
-| FR-07 | When connected, the dashboard shows the account holder's 20 most recently modified Google Drive items, newest first, each with name, type and last-modified date and time. File contents are never downloaded or stored. | P2 |
+| FR-07 | When connected, the dashboard shows the account holder's 20 most recently modified Google Drive items, newest first, each with name, type, last-modified date and time, and an "Open in Drive" link. The holder can refresh the list. File contents are never downloaded or stored. | P2 |
 | FR-08 | The dashboard shows clear empty states: a "Connect Google Drive" prompt when not connected, and a message when the connected Drive has no files. | P2 |
 | FR-09 | The connection persists: after signing out and back in, the account holder sees their Google details and files without reconnecting (subject to limitation L-01). | P2 |
 | FR-10 | A signed-in account holder can disconnect Google: access is revoked with Google and the stored connection is deleted. | P2 |
@@ -68,9 +68,10 @@ Priority: **P1** is built and verified first; **P2** is built only after P1 is v
 | BR-03 | An account holder can have at most one connected Google account. Connecting again replaces the previous connection. |
 | BR-04 | The same Google account may be connected by more than one Connectra account; each connection is independent. |
 | BR-05 | The file list contains items the account holder can see in their own Drive or that are shared with them, excluding trashed items and items in shared drives. Folders are included. |
-| BR-06 | Item types are shown as a friendly label for common types (for example "Google Sheets", "PDF", "Folder"); otherwise the raw type identifier is shown. |
+| BR-06 | Item types are shown as a friendly label for common types (for example "Google Sheets", "PDF", "Folder"); otherwise the label "File" is shown. Raw type identifiers are never shown. Labels: Folder, Google Docs, Google Sheets, Google Slides, PDF, Image, Video, Word, Excel, PowerPoint, Text, File. |
 | BR-07 | Dates and times are shown in the Asia/Kolkata time zone in the format `22 Oct 2026, 14:05`. |
-| BR-08 | If Google reports the stored access permission as invalid or revoked, the account is treated as not connected and the stored connection is removed. |
+| BR-08 | If Google reports the stored access permission as invalid, revoked or lacking Drive access, or the stored values cannot be decrypted, the stored connection is removed and the dashboard shows "Your Google Drive connection has expired or was removed. Please reconnect." **once**; later visits show the normal "Connect Google Drive" state (D-021). Temporary Google problems (rate limits, server errors, timeouts) keep the connection and show a retryable files error. |
+| BR-13 | "Open in Drive" uses only the link returned by Google, and only if it is an https link to drive.google.com or docs.google.com; otherwise no link is shown. It opens in a new tab without giving the new page access to Connectra. |
 | BR-09 | If Google does not provide a name, only the email is shown. |
 | BR-10 | On disconnect, if Google cannot confirm revocation, the stored connection is still deleted and the account holder is told how to remove access manually in their Google account settings. |
 | BR-11 | On account deletion, revocation with Google is attempted first (best effort); deletion of stored data proceeds even if revocation fails. |
@@ -228,7 +229,9 @@ Format: **Given / When / Then**. "AC-x.y" IDs are referenced in the traceability
 - **AC-7.1 (success)** Given a connected holder with more than 20 items, when the dashboard loads, then exactly 20 items are shown, newest modified first, each with name, friendly type and date/time per BR-07.
 - **AC-7.2 (alternative)** Given fewer than 20 items, then all are shown.
 - **AC-7.3 (failure)** Given Google is unreachable or times out, then the Google details still show and the file area shows a retryable error.
-- **AC-7.4 (failure)** Given Google reports the permission revoked, then the stored connection is removed and the "Connect Google Drive" state is shown (BR-08).
+- **AC-7.4 (failure)** Given Google reports the permission revoked, then the stored connection is removed and the expired-or-removed message with "Reconnect Google Drive" is shown once; the next visit shows "Connect Google Drive" (BR-08).
+- **AC-7.6 (success)** Given a connected holder, when they choose "Open in Drive" on a file, then the file's Google Drive page opens in a new tab (BR-13).
+- **AC-7.7 (success)** Given a connected holder, when they choose "Refresh", then the list is reloaded from Google.
 - **AC-7.5 (permission)** Given two connected holders, when A views the dashboard, then none of B's files are shown.
 
 ### FR-08 Empty states
@@ -269,7 +272,7 @@ Format: **Given / When / Then**. "AC-x.y" IDs are referenced in the traceability
 
 | ID | Risk / limitation | Impact | Mitigation / acceptance |
 |---|---|---|---|
-| L-01 | While Google's approval page is in testing mode, Google expires the long-lived permission after about 7 days, so FR-09 holds for up to 7 days only. | Holder must reconnect weekly. | Handled gracefully by BR-08. Accepted for localhost. |
+| L-01 | While Google's approval page is in testing mode, Google expires the long-lived permission after about 7 days, so FR-09 holds for up to 7 days only. | Holder must reconnect weekly. | Handled gracefully by BR-08. Accepted for localhost. The 7-day figure comes from Google's consent-screen guidance and was not re-checked on 2026-10-22. |
 | L-02 | When email confirmation is **not** required, sign-up reveals whether an email already has an account (account enumeration), and anyone can register any email address. With confirmation required, sign-up and resend do not reveal this (BR-12). | Low for local use. | Accepted for development only; must be revisited before any production use. |
 | L-07 | Some email security scanners (for example Microsoft Defender Safe Links in Outlook) open links in incoming email before the person does, which uses up the one-time confirmation link. | The person sees "link expired" and must resend. | Accepted; resend is offered on the error page (D-017). |
 | L-08 | The account service's built-in email sender allows only about 2 emails per hour per project. | Testing with confirmation required is slow. | Accepted for development; a custom email provider would raise the limit. |
@@ -299,7 +302,7 @@ Specific test and checklist IDs are added during build phases.
 | FR-04 | AC-4.1, 4.2, 4.3 | SR-01, SR-02 | U (access rules), M |
 | FR-05 | AC-5.1–5.5 | SR-07, SR-08, SR-09 | U (state, nonce, verifier, token checks), M |
 | FR-06 | AC-6.1–6.3 | SR-01, SR-03 | U (decryption), M |
-| FR-07 | AC-7.1–7.5 | SR-01, SR-09, SR-06 | U (response validation, type labels, date format), M |
+| FR-07 | AC-7.1–7.7 | SR-01, SR-09, SR-06 | U (response validation, type labels, date format), M |
 | FR-08 | AC-8.1, 8.2 | — | M |
 | FR-09 | AC-9.1 | SR-03 | M |
 | FR-10 | AC-10.1–10.3 | SR-10, SR-13 | U, M |

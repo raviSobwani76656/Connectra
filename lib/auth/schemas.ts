@@ -41,8 +41,14 @@ export const confirmParamsSchema = z.object({
   type: z.enum(["email", "signup"]),
 });
 
+/** Delete account (FR-11): current password plus the exact word DELETE. */
+export const deleteAccountSchema = z.object({
+  password: existingPassword,
+  confirmation: z.literal("DELETE", { error: "Type DELETE in capital letters to confirm." }),
+});
+
 /** Fixed notices and reasons: query text is never shown to the user. */
-export const loginNoticeSchema = z.enum(["email-confirmed"]);
+export const loginNoticeSchema = z.enum(["email-confirmed", "account-deleted"]);
 export const confirmErrorReasonSchema = z.enum(["expired", "invalid"]);
 
 export type AuthFields = "email" | "password";

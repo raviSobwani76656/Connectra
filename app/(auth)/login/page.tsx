@@ -7,6 +7,7 @@ export const metadata: Metadata = { title: "Log in · Connectra" };
 // Fixed text per notice: the query string is never shown to the user.
 const NOTICES = {
   "email-confirmed": "Your email is confirmed. You can now log in.",
+  "account-deleted": "Your account has been deleted.",
 } as const;
 
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {

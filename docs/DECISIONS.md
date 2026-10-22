@@ -44,7 +44,7 @@
 | D-008 | Store only the encrypted Google refresh token, never access tokens | Accepted | 2026-10-22 | — |
 | D-009 | Google OAuth: hand-written authorization code flow with PKCE, state and nonce | Accepted | 2026-10-22 | — |
 | D-010 | Google Drive scope: drive.metadata.readonly in Google testing mode | Accepted | 2026-10-22 | — |
-| D-011 | Drive file list fetched per request, never stored or cached | Accepted | 2026-10-22 | — |
+| D-011 | Drive file list fetched per request, never stored or cached | Accepted | 2026-10-22 | Superseded by D-019 once D-019 is accepted |
 | D-012 | Turn off Cache Components and Partial Prefetching | Accepted | 2026-10-22 | — |
 | D-013 | State-changing actions as Server Actions; admin client only for account deletion | Accepted | 2026-10-22 | — |
 | D-014 | Localhost only; data stored in Singapore | Accepted | 2026-10-22 | — |
@@ -52,6 +52,9 @@
 | D-016 | Readable development auth log (proxy allow-list paused) | Proposed | 2026-10-22 | — |
 | D-017 | Email confirmation in both modes: token-hash confirm route, uniform messages, resend with cooldown | Proposed | 2026-10-22 | — |
 | D-018 | Show "Please confirm your email" on login for unconfirmed accounts | Proposed | 2026-10-22 | — |
+| D-019 | Drive listing: webViewLink, "File" fallback, one 401 retry, 403 split by reason | Proposed | 2026-10-22 | Supersedes D-011 |
+| D-020 | OAuth state cookie sealed with AES-256-GCM and bound to the user | Proposed | 2026-10-22 | — |
+| D-021 | Dashboard streams the Google section; expired state shown once | Proposed | 2026-10-22 | — |
 
 ---
 
@@ -841,6 +844,132 @@ reuses the email already typed in the form.
 
 ---
 
+### D-019: Drive Listing — webViewLink, "File" Fallback, One 401 Retry, 403 Split by Reason
+
+**Status:** Proposed
+
+**Decision:** Each dashboard load (or Refresh) lists Drive files as in D-011, with these changes:
+- **Fields:** `fields=files(id,name,mimeType,modifiedTime,webViewLink)`. Request parameters stay `q=trashed = false`, `orderBy=modifiedTime desc`, `pageSize=20`, `corpora=user` (Google: "Files owned by or shared to the user"), with no shared-drive parameters, so shared drives are excluded.
+- **Types:** friendly labels; anything unknown is shown as "File". Raw MIME types are never shown (BR-06).
+- **Links:** `webViewLink` is shown only if it is `https:` on `drive.google.com` or `docs.google.com` (BR-13), and opens with `target="_blank" rel="noopener noreferrer"`.
+- **Error handling:**
+  - Token refresh `invalid_grant`: delete the row and show State C.
+  - Drive **401**: refresh the access token once more and retry `files.list` once. If it fails again, delete the row and show State C.
+  - Drive **403** with reason `insufficientPermissions` or `ACCESS_TOKEN_SCOPE_INSUFFICIENT`: delete the row and show State C with the "access wasn't fully granted" message.
+  - Drive **403** with a rate-limit reason (`rateLimitExceeded`, `userRateLimitExceeded`, `dailyLimitExceeded`), **429**, **5xx**, a timeout or an invalid response: show the files error state and keep the connection.
+- **Budget:** at most one token refresh and one `files.list` per load, plus one retry of each only after a 401.
+
+**Why:**
+- Google's Drive error guide uses 403 both for missing permissions and for quota limits.
+  Treating every 403 as "revoked" would disconnect users over a temporary quota problem.
+- Google's guide recommends refreshing the token after a 401 ("refresh the access token using
+  the long-lived refresh token. If this fails, direct the user through the OAuth flow").
+- Validating the link host is defence in depth against unexpected URL schemes.
+
+**Alternatives:** Treat every 403 as revoked (rejected: wrongly disconnects users over quota limits); no 401 retry (rejected: a short-lived token can expire between the refresh and the call).
+
+**Date:** 2026-10-22
+
+**Decision owner / approver:** Ravi
+
+**Scope:** `lib/google/drive.ts`, `lib/google/format.ts`, `lib/google/connection.ts`, dashboard.
+
+**Related decisions:** D-008, D-010, D-021
+
+**Supersedes:** D-011, once this decision is Accepted. D-011 stays in force until then.
+
+**Consequences:** Slightly more code paths to test. Files are still never stored or cached.
+
+**Implementation Guidance:** Log only the HTTP status and Google's error reason; never file names or tokens.
+
+**Validation:** Unit tests for every branch above; manual Drive checks.
+
+**Open Questions:** None.
+
+---
+
+### D-020: OAuth State Cookie Sealed with AES-256-GCM and Bound to the User
+
+**Status:** Proposed
+
+**Decision:**
+- **One cookie** holds `state`, `nonce`, the PKCE `code_verifier`, the Connectra user ID and
+  an issue time.
+- **Sealed:** it is encrypted with the D-007 module using AAD
+  `connectra:v1:<userId>:oauth-state`. Cookie attributes are httpOnly, `SameSite=Lax`,
+  `Path=/api/oauth/google`, 10 minutes, and `Secure` on https.
+- **Checked on the callback:** it is opened with the **current** user's ID, so a cookie created
+  for another user fails decryption. It is also rejected if older than 10 minutes, and deleted
+  before the code exchange.
+
+**Why:** Sealing hides the code verifier from anything that can read cookies. It makes tampering
+detectable, and it enforces "bound to the current user" by cryptography rather than by a
+plain-text field.
+
+**Alternatives:** A plain JSON cookie with a user-ID field (rejected: readable and editable); server-side storage of the flow state (rejected: needs a new table for a 10-minute value).
+
+**Date:** 2026-10-22
+
+**Decision owner / approver:** Ravi
+
+**Scope:** `lib/google/oauth-cookie.ts`, OAuth routes.
+
+**Related decisions:** D-007, D-009
+
+**Supersedes:** None
+
+**Consequences:** Rotating `ENCRYPTION_KEY` invalidates any OAuth flow in progress. That is harmless; the user starts the flow again.
+
+**Implementation Guidance:** Compare `state` and `nonce` in constant time. Never log cookie contents.
+
+**Validation:** Unit tests: missing, tampered, expired and other-user cookies are all rejected.
+
+**Open Questions:** None.
+
+---
+
+### D-021: Dashboard Streams the Google Section; Expired State Shown Once
+
+**Status:** Proposed
+
+**Decision:**
+- **Streaming:** the header, message banner and danger zone render immediately. The whole Google
+  section, meaning the connection card **and** the recent files, renders inside one
+  `<Suspense>` boundary with a simple placeholder. The card's state depends on Google's
+  token response, so it must wait for it.
+- **Expired state:** when the connection is found to be expired, revoked, lacking Drive access
+  or undecryptable, the row is deleted and State C is shown on **that** load. Later loads show
+  State A.
+- **Messages:** banner messages come from a fixed list selected by `?message=<code>`, validated
+  with Zod. Unknown codes show nothing.
+
+**Why:**
+- If the card rendered outside the boundary, it could say "Connected" while the file list
+  discovers the connection was revoked.
+- Showing State C once avoids a schema change to remember a "was revoked" status.
+
+**Alternatives:** Render the card from the database alone (rejected: shows the wrong state after a revoke); keep a status column so State C persists (rejected by Ravi: more schema for little value).
+
+**Date:** 2026-10-22
+
+**Decision owner / approver:** Ravi
+
+**Scope:** `app/dashboard/*`.
+
+**Related decisions:** D-012, D-019
+
+**Supersedes:** None
+
+**Consequences:** The Google card appears a moment after the rest of the page.
+
+**Implementation Guidance:** No `"use cache"`. The dashboard response must not be cached (checked with `curl -I`).
+
+**Validation:** Manual: revoke at Google, reload (State C), reload again (State A).
+
+**Open Questions:** None.
+
+---
+
 ## Decision Record Template
 
 Copy this section for each new decision. Replace all placeholders and remove fields
@@ -929,3 +1058,4 @@ Use a category in the title or scope when helpful. Examples:
 | 2026-10-22 | D-016 proposed after login rate-limit investigation | D-016 |
 | 2026-10-22 | D-016 updated: root cause found; matcher change paused; plain-text dev log implemented | D-016 |
 | 2026-10-22 | D-017 and D-018 proposed for email confirmation handling | D-017, D-018 |
+| 2026-10-22 | D-019 (supersedes D-011 once accepted), D-020 and D-021 proposed for P2 | D-011, D-019 to D-021 |
