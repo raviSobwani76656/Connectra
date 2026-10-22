@@ -1,0 +1,7 @@
+{
+  "enabledPlugins": {
+    "feature-dev@anthropic-plugin-directory": true,
+    "frontend-design@anthropic-plugin-directory": true,
+    "claude-security@anthropic-plugin-directory": true
+  }
+}
